@@ -286,6 +286,83 @@ func setVideo(d *schema.ResourceData, domainDef *libvirtxml.Domain) {
 	}
 }
 
+func setHostDev(d *schema.ResourceData, domainDef *libvirtxml.Domain) {
+	//var abus uint = 0
+	//var afunction uint = 2 //1, 2,3
+	//var aslot uint = 2
+	//var adomain uint = 0
+
+	for i := 0; i < d.Get("hostdev.#").(int); i++ {
+		hostdev := libvirtxml.DomainHostdev{}
+		hostdev.SubsysPCI = &libvirtxml.DomainHostdevSubsysPCI{}
+		hostdev.SubsysPCI.Source = &libvirtxml.DomainHostdevSubsysPCISource{}
+		hostdev.SubsysPCI.Source.Address = &libvirtxml.DomainAddressPCI{}
+		prefix := fmt.Sprintf("hostdev.%d", i)
+
+		if hostdevDriver, ok := d.GetOk(prefix + ".driver"); ok {
+			hostdev.SubsysPCI.Driver = &libvirtxml.DomainHostdevSubsysPCIDriver{
+				Name: hostdevDriver.(string),
+			}
+		} else {
+			fmt.Errorf("driver type for hostdev")
+		}
+		if sourceDomain, ok := d.GetOk(prefix + ".domain"); ok {
+			var adomain uint = (uint)(sourceDomain.(int))
+			hostdev.SubsysPCI.Source.Address.Domain = &adomain
+		} else {
+			fmt.Errorf("domain for hostdev")
+		}
+		if sourceBus, ok := d.GetOk(prefix + ".bus"); ok {
+			var abus uint = (uint)(sourceBus.(int))
+			hostdev.SubsysPCI.Source.Address.Bus = &abus
+		} else {
+			fmt.Errorf("bus for hostdev")
+		}
+		if sourceSlot, ok := d.GetOk(prefix + ".slot"); ok {
+			var aslot uint = (uint)(sourceSlot.(int))
+			hostdev.SubsysPCI.Source.Address.Slot = &aslot
+		} else {
+			fmt.Errorf("slot for hostdev")
+		}
+		if sourceFunction, ok := d.GetOk(prefix + ".function"); ok {
+			var afunction uint = (uint)(sourceFunction.(int))
+			hostdev.SubsysPCI.Source.Address.Function = &afunction
+		} else {
+			fmt.Errorf("function for hostdev")
+		}
+		domainDef.Devices.Hostdevs = append(domainDef.Devices.Hostdevs, hostdev)
+	}
+
+}
+
+func setMemoryBacking(d *schema.ResourceData, domainDef *libvirtxml.Domain) {
+
+	prefix := "memorybacking.0"
+	if _, ok := d.GetOk(prefix); ok {
+		domainDef.MemoryBacking = &libvirtxml.DomainMemoryBacking{}
+		hugepages, ok := d.GetOk(prefix + ".hugepages")
+		if !ok {
+			fmt.Println("hugepage in memorybacking is not properly defined!")
+		} else {
+			domainDef.MemoryBacking.MemoryHugePages = &libvirtxml.DomainMemoryHugepages{}
+			domainDef.MemoryBacking.MemoryHugePages.Hugepages = []libvirtxml.DomainMemoryHugepage{
+				{Size: uint(hugepages.(int)), Unit: "KiB"},
+			}
+			domainDef.MemoryBacking.MemoryNosharepages = &libvirtxml.DomainMemoryNosharepages{}
+			domainDef.MemoryBacking.MemorySource = &libvirtxml.DomainMemorySource{
+				Type: "memfd",
+			}
+			domainDef.MemoryBacking.MemoryAccess = &libvirtxml.DomainMemoryAccess{
+				Mode: "shared",
+			}
+			domainDef.MemoryBacking.MemoryAllocation = &libvirtxml.DomainMemoryAllocation{
+				Mode: "immediate",
+			}
+		}
+
+	}
+}
+
 func setGraphics(d *schema.ResourceData, domainDef *libvirtxml.Domain, arch string) error {
 	// For aarch64, s390x, ppc64 and ppc64le spice is not supported
 	if arch == "aarch64" || arch == "s390x" || strings.HasPrefix(arch, "ppc64") {
@@ -299,6 +376,21 @@ func setGraphics(d *schema.ResourceData, domainDef *libvirtxml.Domain, arch stri
 		graphicsType, ok := d.GetOk(prefix + ".type")
 		if !ok {
 			return fmt.Errorf("missing graphics type for domain")
+		}
+
+		if graphicsType == "gtk" {
+			domainDef.QEMUCommandline = &libvirtxml.DomainQEMUCommandline{}
+			domainDef.QEMUCommandline.Args = []libvirtxml.DomainQEMUCommandlineArg{
+				{Value: "-device"},
+				{Value: "virtio-vga,blob=true"},
+				{Value: "-display"},
+				{Value: "gtk,gl=on"},
+			}
+			domainDef.QEMUCommandline.Envs = []libvirtxml.DomainQEMUCommandlineEnv{
+				{Name: "DISPLAY", Value: ":0"},
+			}
+			//setHostDev(d, domainDef)
+			return nil
 		}
 
 		autoport := d.Get(prefix + ".autoport").(bool)
@@ -580,6 +672,8 @@ func setDisks(d *schema.ResourceData, domainDef *libvirtxml.Domain, virConn *lib
 
 			if !strings.HasSuffix(file.(string), ".qcow2") {
 				disk.Driver.Type = "raw"
+			} else {
+				disk.Driver.Type = "qcow2"
 			}
 		} else if blockDev, ok := d.GetOk(prefix + ".block_device"); ok {
 			disk.Source = &libvirtxml.DomainDiskSource{

@@ -1,0 +1,54 @@
+  <domain type="kvm">
+      <name>ubuntu</name>
+      <memory unit="MiB">4192</memory>
+      <memoryBacking>
+          <hugepages>
+              <page size="2048" unit="KiB"></page>
+          </hugepages>
+          <nosharepages></nosharepages>
+          <source type="memfd"></source>
+          <access mode="shared"></access>
+          <allocation mode="immediate"></allocation>
+      </memoryBacking>
+      <vcpu>6</vcpu>
+      <os>
+          <type arch="x86_64" machine="pc-q35-6.0">hvm</type>
+          <loader readonly="yes" secure="no" type="pflash">/usr/share/OVMF/OVMF_CODE_4M.fd</loader>
+          <nvram template="/usr/share/OVMF/OVMF_VARS_4M.fd">/var/lib/libvirt/qemu/nvram/vm0_VARS.fd</nvram>
+      </os>
+      <features>
+          <pae></pae>
+          <acpi></acpi>
+          <apic></apic>
+      </features>
+      <cpu mode="host-passthrough"></cpu>
+      <devices>
+          <emulator>/usr/bin/qemu-system-x86_64</emulator>
+          <disk type="file" device="disk">
+              <driver name="qemu" type="qcow2"></driver>
+              <source file="/home/user/liulis/mtl_ubuntu/ubuntu_bk.qcow2"></source>
+              <target dev="vda" bus="virtio"></target>
+          </disk>
+          <interface type="network">
+              <mac address="52:54:00:02:62:b3"></mac>
+              <source network="vm-default"></source>
+              <model type="virtio"></model>
+          </interface>
+          <hostdev mode="subsystem" type="pci">
+              <driver name="vfio"></driver>
+              <source>
+                  <address slot="0x02" function="0x2"></address>
+              </source>
+          </hostdev>
+          <rng model="virtio">
+              <backend model="random">/dev/urandom</backend>
+          </rng>
+      </devices>
+      <commandline xmlns="http://libvirt.org/schemas/domain/qemu/1.0">
+          <arg value="-device"></arg>
+          <arg value="virtio-vga,blob=true"></arg>
+          <arg value="-display"></arg>
+          <arg value="gtk,gl=on"></arg>
+          <env name="DISPLAY" value=":0"></env>
+      </commandline>
+  </domain>

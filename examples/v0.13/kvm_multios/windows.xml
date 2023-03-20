@@ -1,0 +1,47 @@
+  <domain type="kvm">
+      <name>windows</name>
+      <memory unit="MiB">4192</memory>
+      <memoryBacking>
+          <hugepages>
+              <page size="2048" unit="KiB"></page>
+          </hugepages>
+          <nosharepages></nosharepages>
+          <source type="memfd"></source>
+          <access mode="shared"></access>
+          <allocation mode="immediate"></allocation>
+      </memoryBacking>
+      <vcpu>4</vcpu>
+      <os>
+          <type machine="pc-q35-6.0">hvm</type>
+      </os>
+      <features>
+          <pae></pae>
+          <acpi></acpi>
+          <apic></apic>
+      </features>
+      <cpu mode="host-passthrough"></cpu>
+      <devices>
+          <emulator>/usr/bin/qemu-system-x86_64</emulator>
+          <disk type="file" device="disk">
+              <driver name="qemu" type="qcow2"></driver>
+              <source file="/home/user/Downloads/windows.qcow2"></source>
+              <target dev="vda" bus="virtio"></target>
+          </disk>
+          <hostdev mode="subsystem" type="pci">
+              <driver name="vfio"></driver>
+              <source>
+                  <address slot="0x02" function="0x1"></address>
+              </source>
+          </hostdev>
+          <rng model="virtio">
+              <backend model="random">/dev/urandom</backend>
+          </rng>
+      </devices>
+      <commandline xmlns="http://libvirt.org/schemas/domain/qemu/1.0">
+          <arg value="-device"></arg>
+          <arg value="virtio-vga,blob=true"></arg>
+          <arg value="-display"></arg>
+          <arg value="gtk,gl=on"></arg>
+          <env name="DISPLAY" value=":0"></env>
+      </commandline>
+  </domain>

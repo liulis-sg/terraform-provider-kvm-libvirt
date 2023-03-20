@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -70,6 +71,11 @@ func resourceLibvirtDomain() *schema.Resource {
 				ForceNew: true,
 			},
 			"firmware": {
+				Type:     schema.TypeString,
+				Optional: true,
+				ForceNew: true,
+			},
+			"osvariant": {
 				Type:     schema.TypeString,
 				Optional: true,
 				ForceNew: true,
@@ -174,6 +180,10 @@ func resourceLibvirtDomain() *schema.Resource {
 							Optional: true,
 						},
 						"block_device": {
+							Type:     schema.TypeString,
+							Optional: true,
+						},
+						"format": {
 							Type:     schema.TypeString,
 							Optional: true,
 						},
@@ -465,6 +475,75 @@ func resourceLibvirtDomain() *schema.Resource {
 					},
 				},
 			},
+			"memorybacking": {
+				ForceNew: true,
+				Type:     schema.TypeList,
+				Optional: true,
+				MaxItems: 1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"hugepages": {
+							Type:     schema.TypeInt,
+							Optional: true,
+							ForceNew: true,
+						},
+						"source": {
+							Type:     schema.TypeString,
+							Optional: true,
+							ForceNew: true,
+							Default:  "memfd",
+						},
+						"allocation": {
+							Type:     schema.TypeString,
+							Optional: true,
+							ForceNew: true,
+							Default:  "immediate",
+						},
+						"access": {
+							Type:     schema.TypeString,
+							Optional: true,
+							ForceNew: true,
+							Default:  "sahred",
+						},
+					},
+				},
+			},
+			"hostdev": {
+				ForceNew: true,
+				Type:     schema.TypeList,
+				Optional: true,
+				MaxItems: 1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"driver": {
+							Type:     schema.TypeString,
+							Optional: true,
+							ForceNew: true,
+							Default:  "vfio",
+						},
+						"domain": {
+							Type:     schema.TypeInt,
+							Optional: true,
+							ForceNew: true,
+						},
+						"bus": {
+							Type:     schema.TypeInt,
+							Optional: true,
+							ForceNew: true,
+						},
+						"slot": {
+							Type:     schema.TypeInt,
+							Optional: true,
+							ForceNew: true,
+						},
+						"function": {
+							Type:     schema.TypeInt,
+							Optional: true,
+							ForceNew: true,
+						},
+					},
+				},
+			},
 		},
 	}
 }
@@ -484,6 +563,13 @@ func resourceLibvirtDomainCreate(ctx context.Context, d *schema.ResourceData, me
 
 	if name, ok := d.GetOk("name"); ok {
 		domainDef.Name = name.(string)
+	}
+
+	if osvariant, ok := d.GetOk("metadata"); ok {
+		if osvariant == "windows" {
+			sstring := `<libosinfo:libosinfo xmlns:libosinfo="http://libosinfo.org/xmlns/libvirt/domain/1.0"><libosinfo:os id="http://microsoft.com/win/10"/></libosinfo:libosinfo>`
+			domainDef.Metadata = &libvirtxml.DomainMetadata{XML: sstring}
+		}
 	}
 
 	if cpuMode, ok := d.GetOk("cpu.0.mode"); ok {
@@ -523,6 +609,8 @@ func resourceLibvirtDomainCreate(ctx context.Context, d *schema.ResourceData, me
 	setFirmware(d, &domainDef)
 	setBootDevices(d, &domainDef)
 	setTPMs(d, &domainDef)
+	setHostDev(d, &domainDef)
+	setMemoryBacking(d, &domainDef)
 
 	if err := setCoreOSIgnition(d, &domainDef, arch); err != nil {
 		return diag.FromErr(err)
@@ -563,6 +651,19 @@ func resourceLibvirtDomainCreate(ctx context.Context, d *schema.ResourceData, me
 	if err != nil {
 		return diag.Errorf("error applying XSLT stylesheet: %s", err)
 	}
+
+	filename := domainDef.Name + "." + "xml"
+	f, err := os.Create(filename)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	n, err := f.WriteString(data)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Print("wrote %d byte\n", n)
 
 	domain, err := virConn.DomainDefineXML(data)
 	if err != nil {
@@ -910,6 +1011,7 @@ func resourceLibvirtDomainRead(ctx context.Context, d *schema.ResourceData, meta
 			// LEGACY way of handling volumes using "file", which we replaced
 			// by the diskdef.Source.Volume once we realized it existed.
 			// This code will be removed in future versions of the provider.
+			return nil
 			virVol, err := virConn.StorageVolLookupByPath(diskDef.Source.File.File)
 			if err != nil {
 				return diag.Errorf("error retrieving volume for disk: %s", err)
