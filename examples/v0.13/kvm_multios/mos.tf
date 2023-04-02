@@ -7,62 +7,57 @@ terraform {
   }
 }
 
+locals {
+  generate_xml_only = "false"
+  vms =["ubuntu", "windows"]
+  #vms =["ubuntu"]
+  ## provide the os type for the vm, 0: ubuntu 1: windows, 2: android
+  os_id = [ 0, 1 ]
+}
+
 provider "libvirt" {
   uri = "qemu:///system"
 }
 
-#resource "libvirt_volume" "ubuntu-cloud-uefi" {
-#  name   = "ubuntu-cloud-uefi"
-#  source = "/home/user/liulis/mtl_ubuntu/ubuntu_bk.qcow2"
-#}
-#
-#resource "libvirt_volume" "volume" {
-#  name           = "vm${count.index}"
-#  base_volume_id = libvirt_volume.ubuntu-cloud-uefi.id
-#  count          = 1
-#}
-
-resource "libvirt_domain" "ubuntu" {
-  count  = 1
-  name   = "ubuntu"
+resource "libvirt_domain" "vmdomain" {
+  count  = length(local.vms)
+  vmid = count.index + 1
+  name   = "${local.vms[count.index]}-${count.index}"
   memory = "4192"
-  vcpu   = 6
+  osvariant = local.vms[count.index]
+  vcpu   = var.vm_config[local.os_id[count.index]].vcpu
   arch   = "x86_64"
   machine = "pc-q35-6.0"
-  osvariant = "linux"
   emulator = "/usr/bin/qemu-system-x86_64"
+  tpl_gen = local.generate_xml_only == "true" ? true : false
+  total_vms = length(local.vms)
+  last_instance = (count.index +1) == length(local.vms) ? true : false
 
-  # This file is usually present as part of the ovmf firmware package in many
-  # Linux distributions.
-  firmware = "/usr/share/OVMF/OVMF_CODE_4M.fd"
-
+  ## This file is usually present as part of the ovmf firmware package in many
+  ## Linux distributions.
+  # "/usr/share/OVMF/OVMF_CODE_4M.fd"
+  firmware = var.vm_config[local.os_id[count.index]].firmware
   nvram {
     # This is the file which will back the UEFI NVRAM content.
     file = "/var/lib/libvirt/qemu/nvram/vm${count.index}_VARS.fd"
-
     # This file needs to be provided by the user.
     template = "/usr/share/OVMF/OVMF_VARS_4M.fd"
   }
 
   disk {
     #volume_id = element(libvirt_volume.volume.*.id, count.index)
-    file = "/home/user/liulis/mtl_ubuntu/ubuntu_bk.qcow2"
+    file = var.vm_config[local.os_id[count.index]].qcow_file
   }
 
-  ### use VNC as graphics
-  #graphics {
-  #  type        = "vnc"
-  #  listen_type = "address"
-  #  listen_address = "0.0.0.0"
-  #}
-#
-  #video {
-  #  type = "qxl"
-  #}
-
-  ### use GTK as graphics
+  ## use VNC as graphics
   graphics {
-    type = "gtk"
+   type        = var.vm_config[local.os_id[count.index]].graphics_type
+   listen_type = "address"
+   listen_address = "0.0.0.0"
+  }
+
+  video {
+    type = "qxl"
   }
 
   cpu {
@@ -70,81 +65,35 @@ resource "libvirt_domain" "ubuntu" {
   }
 
   network_interface {
-    network_name   = "vm-default"
-    bridge         = "vm-virbr0"
+    enabled = var.vm_config[local.os_id[count.index]].network.enable
+    network_name   = var.vm_config[local.os_id[count.index]].network.name
+    bridge         = var.vm_config[local.os_id[count.index]].network.bridge
   }
-
   memorybacking {
     hugepages = 2048
     access = "shared"
   }
 
   hostdev {
-    driver = "vfio"
-    domain = 0
-    bus = 0
-    slot = 2
-    function = 2
-  }
-
-}
-
-resource "libvirt_domain" "windows" {
-  count  = 1
-  name   = "windows"
-  memory = "4192"
-  vcpu   = 4
-  #metadata = `<libosinfo:libosinfo xmlns:libosinfo="http://libosinfo.org/xmlns/libvirt/domain/1.0"><libosinfo:os id="http://microsoft.com/win/10"/></libosinfo:libosinfo>`
-  emulator = "/usr/bin/qemu-system-x86_64"
-  machine = "pc-q35-6.0"
-  osvariant ="windows"
-
-  # This file is usually present as part of the ovmf firmware package in many
-  # Linux distributions.
-  #firmware = "/usr/share/OVMF/OVMF_CODE.fd"
-
-  #nvram {
-  #  # This is the file which will back the UEFI NVRAM content.
-  #  file = "/var/lib/libvirt/qemu/nvram/vm2_VARS.fd"
-
-    # This file needs to be provided by the user.
-    # template = "/srv/provisioning/terraform/debian-stable-uefi_VARS.fd"
-  #}
-
-  disk {
-   #volume_id = element(libvirt_volume.volume.*.id, count.index)
-   file = "/home/user/Downloads/windows.qcow2"
-   format = "qcow2"
-  }
-
-  graphics {
-   type        = "gtk"
-   #listen_type = "address"
-   #listen_address = "0.0.0.0"
-  }
-
-  #video {
-  #type = "qxl"
-  #}
-
-  cpu {
-    mode = "host-passthrough"
-  }
-
-  memorybacking {
-    hugepages = 2048
-    access = "shared"
+    type = var.vm_config[local.os_id[count.index]].vga_pci.type
+    driver = var.vm_config[local.os_id[count.index]].vga_pci.driver
+    enabled = var.vm_config[local.os_id[count.index]].vga_pci.enable
+    domain = var.vm_config[local.os_id[count.index]].vga_pci.domain
+    bus = var.vm_config[local.os_id[count.index]].vga_pci.bus
+    slot = var.vm_config[local.os_id[count.index]].vga_pci.slot
+    function = var.vm_config[local.os_id[count.index]].vga_pci.function
   }
 
   hostdev {
-    driver = "vfio"
-    domain = 0
-    bus = 0
-    slot = 2
-    function = 1
+    type = var.vm_config[local.os_id[count.index]].mouse_usb.type
+    name = "USB-Mouse"
+    enabled = var.vm_config[local.os_id[count.index]].mouse_usb.enable
+    bus = var.vm_config[local.os_id[count.index]].mouse_usb.bus
+    device = var.vm_config[local.os_id[count.index]].mouse_usb.device
   }
 
-  # xml {
-  #  xslt = file("win_vm.xsl")
-  #}
+  release_config {
+    os = var.vm_config[local.os_id[count.index]].release_config.os
+    kernel = var.vm_config[local.os_id[count.index]].release_config.kernel
+  }
 }

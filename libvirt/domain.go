@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/atsushinee/go-markdown-generator/doc"
 	"github.com/davecgh/go-spew/spew"
 	libvirt "github.com/digitalocean/go-libvirt"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
@@ -23,6 +24,113 @@ const domWaitLeaseStillWaiting = "waiting-addresses"
 const domWaitLeaseDone = "all-addresses-obtained"
 
 var errDomainInvalidState = errors.New("invalid state for domain")
+var markdownIndex int = 0
+var bookMd *doc.MarkDownDoc
+var tblMd *doc.Table
+var kvm_mos_md_index map[string]int
+var kvm_mos_md_desc map[string]string
+
+func createMarkdownTbl(size int) (*doc.MarkDownDoc, *doc.Table) {
+	bookMd = doc.NewMarkDown()
+	tblMd = doc.NewTable(11, size+2)
+
+	kvm_mos_md_index = map[string]int{
+		"name":      0,
+		"memory":    1,
+		"vcpu":      2,
+		"arch":      3,
+		"machine":   4,
+		"osvariant": 5,
+		"firmware":  6,
+		"graphics":  7,
+		"network":   8,
+		"VGA":       9,
+		"USB-Mouse": 10,
+	}
+
+	kvm_mos_md_desc = map[string]string{
+		"name":      "Name of the VM",
+		"memory":    "vm memory in MiB",
+		"vcpu":      "vcpu number",
+		"arch":      "arch",
+		"machine":   "machine types",
+		"osvariant": "vm os type",
+		"firmware":  "loaded firmware",
+		"graphics":  "graphics settings",
+		"network":   "network interface setting",
+		"VGA":       "VGA PCI configuration",
+		"USB-Mouse": "usb mouse configuration",
+	}
+
+	bookMd.WriteTitle("Supported Configurations", doc.LevelNormal)
+
+	for i := 1; i <= size; i++ {
+		tblMd.SetTitle(i, "VM Guest"+strconv.Itoa(i))
+	}
+	tblMd.SetTitle(0, "Component")
+
+	tblMd.SetTitle(size+1, "Description")
+
+	for key, value := range kvm_mos_md_index {
+		tblMd.SetContent(value, 0, key)
+		tblMd.SetContent(value, size+1, kvm_mos_md_desc[key])
+	}
+	return bookMd, tblMd
+
+}
+
+func getMarkdownTbl() (*doc.MarkDownDoc, *doc.Table) {
+	return bookMd, tblMd
+}
+
+func udpateTableContent(key string, content string, domainDef *libvirtxml.Domain, col int) {
+
+	if key == "" || key == "null" || content == "" || content == "null" {
+		log.Print("[DEBUG] ####error input ", col, "  ", content)
+	} else {
+		log.Print("[DEBUG] update table for vmid ", col, "  ", content)
+	}
+	kvm_mos_md_index_te := map[string]int{
+		"name":      0,
+		"memory":    1,
+		"vcpu":      2,
+		"arch":      3,
+		"machine":   4,
+		"osvariant": 5,
+		"firmware":  6,
+		"graphics":  7,
+		"network":   8,
+		"VGA":       9,
+		"USB-Mouse": 10,
+	}
+
+	if _, ok := kvm_mos_md_index_te[key]; !ok {
+		log.Print("[DEBUG] error: mapkey dosenot exist", key)
+		return
+	} else {
+		_, tbl := getMarkdownTbl()
+		if tbl != nil {
+			tbl.SetContent(kvm_mos_md_index_te[key], col, content)
+		} else {
+			log.Print("[DEBUG] error: tbl dosenot exist", key)
+		}
+	}
+
+}
+
+func exportMarkdown(book *doc.MarkDownDoc, t *doc.Table, filename string) {
+	if book == nil || t == nil {
+		log.Print("[DEBUG] error in create Markdown")
+		return
+	} else {
+		book.WriteTable(t)
+		err := book.Export(filename)
+		if err != nil {
+			log.Print("[DEBUG] Markdown is created")
+		}
+	}
+
+}
 
 func domainWaitForLeases(ctx context.Context, virConn *libvirt.Libvirt, domain libvirt.Domain, waitForLeases []*libvirtxml.DomainInterface,
 	timeout time.Duration, rd *schema.ResourceData) error {
@@ -287,52 +395,111 @@ func setVideo(d *schema.ResourceData, domainDef *libvirtxml.Domain) {
 }
 
 func setHostDev(d *schema.ResourceData, domainDef *libvirtxml.Domain) {
-	//var abus uint = 0
-	//var afunction uint = 2 //1, 2,3
-	//var aslot uint = 2
-	//var adomain uint = 0
+	var pcistring string
+	var vmidNumber int
+
+	if vmid, ok := d.GetOk("vmid"); ok {
+		vmidNumber = vmid.(int)
+	} else {
+		fmt.Errorf("missing vmid")
+		return
+	}
 
 	for i := 0; i < d.Get("hostdev.#").(int); i++ {
 		hostdev := libvirtxml.DomainHostdev{}
-		hostdev.SubsysPCI = &libvirtxml.DomainHostdevSubsysPCI{}
-		hostdev.SubsysPCI.Source = &libvirtxml.DomainHostdevSubsysPCISource{}
-		hostdev.SubsysPCI.Source.Address = &libvirtxml.DomainAddressPCI{}
 		prefix := fmt.Sprintf("hostdev.%d", i)
 
-		if hostdevDriver, ok := d.GetOk(prefix + ".driver"); ok {
-			hostdev.SubsysPCI.Driver = &libvirtxml.DomainHostdevSubsysPCIDriver{
-				Name: hostdevDriver.(string),
-			}
-		} else {
-			fmt.Errorf("driver type for hostdev")
+		hostdevType, ok := d.GetOk(prefix + ".type")
+		if !ok {
+			log.Printf("[DEBUG] hostdev type not found %s", prefix)
+			return
 		}
-		if sourceDomain, ok := d.GetOk(prefix + ".domain"); ok {
-			var adomain uint = (uint)(sourceDomain.(int))
-			hostdev.SubsysPCI.Source.Address.Domain = &adomain
-		} else {
-			fmt.Errorf("domain for hostdev")
-		}
-		if sourceBus, ok := d.GetOk(prefix + ".bus"); ok {
-			var abus uint = (uint)(sourceBus.(int))
-			hostdev.SubsysPCI.Source.Address.Bus = &abus
-		} else {
-			fmt.Errorf("bus for hostdev")
-		}
-		if sourceSlot, ok := d.GetOk(prefix + ".slot"); ok {
-			var aslot uint = (uint)(sourceSlot.(int))
-			hostdev.SubsysPCI.Source.Address.Slot = &aslot
-		} else {
-			fmt.Errorf("slot for hostdev")
-		}
-		if sourceFunction, ok := d.GetOk(prefix + ".function"); ok {
-			var afunction uint = (uint)(sourceFunction.(int))
-			hostdev.SubsysPCI.Source.Address.Function = &afunction
-		} else {
-			fmt.Errorf("function for hostdev")
-		}
-		domainDef.Devices.Hostdevs = append(domainDef.Devices.Hostdevs, hostdev)
-	}
 
+		switch hostdevType {
+		case "pci":
+			hostdevenabled, ok := d.GetOk(prefix + ".enabled")
+			if !ok || hostdevenabled.(int) != 1 {
+				udpateTableContent("VGA", "NA", domainDef, vmidNumber)
+				return
+			}
+			hostdev.SubsysPCI = &libvirtxml.DomainHostdevSubsysPCI{}
+			hostdev.SubsysPCI.Source = &libvirtxml.DomainHostdevSubsysPCISource{}
+			hostdev.SubsysPCI.Source.Address = &libvirtxml.DomainAddressPCI{}
+
+			if hostdevDriver, ok := d.GetOk(prefix + ".driver"); ok {
+				log.Printf("[DEBUG] hostdev driver found %s", prefix)
+				hostdev.SubsysPCI.Driver = &libvirtxml.DomainHostdevSubsysPCIDriver{
+					Name: hostdevDriver.(string),
+				}
+			} else {
+				fmt.Errorf("driver type for hostdev")
+			}
+			if sourceDomain, ok := d.GetOk(prefix + ".domain"); ok {
+				var adomain uint = (uint)(sourceDomain.(int))
+				hostdev.SubsysPCI.Source.Address.Domain = &adomain
+				pcistring = pcistring + strconv.Itoa((int)(adomain))
+				pcistring += "."
+				log.Printf("[DEBUG] hostdev domain found %d", (uint)(sourceDomain.(int)))
+			} else {
+				pcistring += "0."
+			}
+			if sourceBus, ok := d.GetOk(prefix + ".bus"); ok {
+				var abus uint = (uint)(sourceBus.(int))
+				hostdev.SubsysPCI.Source.Address.Bus = &abus
+				pcistring = pcistring + strconv.Itoa((int)(abus))
+				pcistring += "1."
+				log.Printf("[DEBUG] hostdev bus found %s", prefix)
+			} else {
+				pcistring += "0."
+			}
+			if sourceSlot, ok := d.GetOk(prefix + ".slot"); ok {
+				var aslot uint = (uint)(sourceSlot.(int))
+				hostdev.SubsysPCI.Source.Address.Slot = &aslot
+				log.Printf("[DEBUG] hostdev slot found %s", prefix)
+				pcistring = pcistring + strconv.Itoa((int)(aslot))
+				pcistring += "."
+			} else {
+				pcistring += "0."
+			}
+			if sourceFunction, ok := d.GetOk(prefix + ".function"); ok {
+				var afunction uint = (uint)(sourceFunction.(int))
+				hostdev.SubsysPCI.Source.Address.Function = &afunction
+				pcistring += strconv.Itoa((int)(afunction))
+			} else {
+				pcistring += "0"
+			}
+			domainDef.Devices.Hostdevs = append(domainDef.Devices.Hostdevs, hostdev)
+			udpateTableContent("VGA", pcistring, domainDef, vmidNumber)
+		case "usb":
+			hostdev.SubsysUSB = &libvirtxml.DomainHostdevSubsysUSB{}
+			hostdev.SubsysUSB.Source = &libvirtxml.DomainHostdevSubsysUSBSource{}
+			hostdev.SubsysUSB.Source.Address = &libvirtxml.DomainAddressUSB{}
+			if deviceName, ok := d.GetOk(prefix + ".name"); ok {
+				hostdevenabled, ok := d.GetOk(prefix + ".enabled")
+				if !ok || hostdevenabled.(int) != 1 {
+					udpateTableContent(deviceName.(string), "NA", domainDef, vmidNumber)
+					return
+				} else {
+					udpateTableContent(deviceName.(string), "passthrough", domainDef, vmidNumber)
+				}
+
+				if usbBus, ok := d.GetOk(prefix + ".bus"); ok {
+					var aBus uint = (uint)(usbBus.(int))
+					hostdev.SubsysUSB.Source.Address.Bus = &aBus
+				} else {
+					fmt.Errorf("Bus for hostdev USB missing")
+				}
+				if usbDevice, ok := d.GetOk(prefix + ".device"); ok {
+					var aDevice uint = (uint)(usbDevice.(int))
+					hostdev.SubsysUSB.Source.Address.Device = &aDevice
+				} else {
+					fmt.Errorf("Device for hostdev USB missing")
+				}
+
+				domainDef.Devices.Hostdevs = append(domainDef.Devices.Hostdevs, hostdev)
+			}
+		}
+	}
 }
 
 func setMemoryBacking(d *schema.ResourceData, domainDef *libvirtxml.Domain) {
@@ -365,9 +532,17 @@ func setMemoryBacking(d *schema.ResourceData, domainDef *libvirtxml.Domain) {
 
 func setGraphics(d *schema.ResourceData, domainDef *libvirtxml.Domain, arch string) error {
 	// For aarch64, s390x, ppc64 and ppc64le spice is not supported
+	var listenAdr string
+	var vmidNumber int
 	if arch == "aarch64" || arch == "s390x" || strings.HasPrefix(arch, "ppc64") {
 		domainDef.Devices.Graphics = nil
 		return nil
+	}
+
+	if vmid, ok := d.GetOk("vmid"); ok {
+		vmidNumber = vmid.(int)
+	} else {
+		return fmt.Errorf("missing vmid")
 	}
 
 	prefix := "graphics.0"
@@ -389,9 +564,12 @@ func setGraphics(d *schema.ResourceData, domainDef *libvirtxml.Domain, arch stri
 			domainDef.QEMUCommandline.Envs = []libvirtxml.DomainQEMUCommandlineEnv{
 				{Name: "DISPLAY", Value: ":0"},
 			}
-			//setHostDev(d, domainDef)
+
+			udpateTableContent("graphics", graphicsType.(string), domainDef, vmidNumber)
 			return nil
 		}
+
+		setVideo(d, domainDef)
 
 		autoport := d.Get(prefix + ".autoport").(bool)
 		listener := libvirtxml.DomainGraphicListener{}
@@ -403,6 +581,7 @@ func setGraphics(d *schema.ResourceData, domainDef *libvirtxml.Domain, arch stri
 				listener.Address = &libvirtxml.DomainGraphicListenerAddress{
 					Address: listenAddress.(string),
 				}
+				listenAdr = listenAddress.(string)
 			case "network":
 				listener.Network = &libvirtxml.DomainGraphicListenerNetwork{}
 			case "socket":
@@ -434,6 +613,7 @@ func setGraphics(d *schema.ResourceData, domainDef *libvirtxml.Domain, arch stri
 		default:
 			return fmt.Errorf("this provider only supports vnc/spice as graphics type. Provided: '%s'", graphicsType)
 		}
+		udpateTableContent("graphics", graphicsType.(string)+" : "+listenAdr, domainDef, vmidNumber)
 	}
 	return nil
 }
@@ -457,6 +637,15 @@ func setCmdlineArgs(d *schema.ResourceData, domainDef *libvirtxml.Domain) {
 }
 
 func setFirmware(d *schema.ResourceData, domainDef *libvirtxml.Domain) {
+	var vmidNumber int
+
+	if vmid, ok := d.GetOk("vmid"); ok {
+		vmidNumber = vmid.(int)
+	} else {
+		fmt.Errorf("missing vmid")
+		return
+	}
+
 	if firmware, ok := d.GetOk("firmware"); ok {
 		firmwareFile := firmware.(string)
 		domainDef.OS.Loader = &libvirtxml.DomainLoader{
@@ -464,6 +653,10 @@ func setFirmware(d *schema.ResourceData, domainDef *libvirtxml.Domain) {
 			Readonly: "yes",
 			Type:     "pflash",
 			Secure:   "no",
+		}
+
+		if strings.Contains(firmwareFile, "OVMF") {
+			udpateTableContent("firmware", "OVMF", domainDef, vmidNumber)
 		}
 
 		if _, ok := d.GetOk("nvram.0"); ok {
@@ -477,6 +670,8 @@ func setFirmware(d *schema.ResourceData, domainDef *libvirtxml.Domain) {
 				Template: nvramTemplateFile,
 			}
 		}
+	} else {
+		udpateTableContent("firmware", "SEABIOS", domainDef, vmidNumber)
 	}
 }
 
@@ -755,6 +950,15 @@ func setCloudinit(d *schema.ResourceData, domainDef *libvirtxml.Domain, virConn 
 func setNetworkInterfaces(d *schema.ResourceData, domainDef *libvirtxml.Domain,
 	virConn *libvirt.Libvirt, partialNetIfaces map[string]*pendingMapping,
 	waitForLeases *[]*libvirtxml.DomainInterface) error {
+	var vmidNumber int
+
+	if vmid, ok := d.GetOk("vmid"); ok {
+		vmidNumber = vmid.(int)
+	} else {
+		fmt.Errorf("missing vmid")
+		return fmt.Errorf("vmid is not found")
+	}
+
 	for i := 0; i < d.Get("network_interface.#").(int); i++ {
 		prefix := fmt.Sprintf("network_interface.%d", i)
 
@@ -892,6 +1096,7 @@ func setNetworkInterfaces(d *schema.ResourceData, domainDef *libvirtxml.Domain,
 		}
 
 		domainDef.Devices.Interfaces = append(domainDef.Devices.Interfaces, netIface)
+		udpateTableContent("network", netIface.Source.Network.Network, domainDef, vmidNumber)
 	}
 
 	return nil

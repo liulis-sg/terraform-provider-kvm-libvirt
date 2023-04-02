@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -58,6 +59,12 @@ func resourceLibvirtDomain() *schema.Resource {
 				Optional: true,
 				ForceNew: false,
 			},
+			"tpl_gen": {
+				Type:     schema.TypeBool,
+				Optional: true,
+				Default:  1,
+				ForceNew: true,
+			},
 			"vcpu": {
 				Type:     schema.TypeInt,
 				Optional: true,
@@ -77,6 +84,11 @@ func resourceLibvirtDomain() *schema.Resource {
 			},
 			"osvariant": {
 				Type:     schema.TypeString,
+				Optional: true,
+				ForceNew: true,
+			},
+			"vmid": {
+				Type:     schema.TypeInt,
 				Optional: true,
 				ForceNew: true,
 			},
@@ -204,6 +216,11 @@ func resourceLibvirtDomain() *schema.Resource {
 							Type:     schema.TypeString,
 							Optional: true,
 							Computed: true,
+						},
+						"enabled": {
+							Type:     schema.TypeString,
+							Optional: true,
+							ForceNew: true,
 						},
 						"bridge": {
 							Type:     schema.TypeString,
@@ -512,14 +529,23 @@ func resourceLibvirtDomain() *schema.Resource {
 				ForceNew: true,
 				Type:     schema.TypeList,
 				Optional: true,
-				MaxItems: 1,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
+						"type": {
+							Type:     schema.TypeString,
+							Optional: true,
+							ForceNew: true,
+						},
 						"driver": {
 							Type:     schema.TypeString,
 							Optional: true,
 							ForceNew: true,
 							Default:  "vfio",
+						},
+						"enabled": {
+							Type:     schema.TypeInt,
+							Optional: true,
+							ForceNew: true,
 						},
 						"domain": {
 							Type:     schema.TypeInt,
@@ -541,6 +567,46 @@ func resourceLibvirtDomain() *schema.Resource {
 							Optional: true,
 							ForceNew: true,
 						},
+						"device": {
+							Type:     schema.TypeInt,
+							Optional: true,
+							ForceNew: true,
+						},
+						"name": {
+							Type:     schema.TypeString,
+							Optional: true,
+							ForceNew: true,
+						},
+					},
+				},
+			},
+
+			"last_instance": {
+				Type:     schema.TypeBool,
+				Optional: true,
+				Computed: true,
+			},
+			"total_vms": {
+				Type:     schema.TypeInt,
+				Optional: true,
+				Computed: true,
+			},
+			"release_config": {
+				ForceNew: true,
+				Type:     schema.TypeList,
+				Optional: true,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"os": {
+							Type:     schema.TypeString,
+							Optional: true,
+							ForceNew: true,
+						},
+						"kernel": {
+							Type:     schema.TypeString,
+							Optional: true,
+							ForceNew: true,
+						},
 					},
 				},
 			},
@@ -550,6 +616,7 @@ func resourceLibvirtDomain() *schema.Resource {
 
 func resourceLibvirtDomainCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	log.Printf("[DEBUG] Create resource libvirt_domain")
+	var vmidNumber int
 
 	virConn := meta.(*Client).libvirt
 	if virConn == nil {
@@ -560,16 +627,30 @@ func resourceLibvirtDomainCreate(ctx context.Context, d *schema.ResourceData, me
 	if err != nil {
 		return diag.FromErr(err)
 	}
+	if total_vms, ok := d.GetOk("total_vms"); ok {
+		if vmid, ok := d.GetOk("vmid"); ok {
+			vmidNumber = vmid.(int)
+			if vmid == 1 {
+				createMarkdownTbl(total_vms.(int))
+			} else {
+				diag.Errorf("error, vmid not defined!")
+			}
+		} else {
+			return diag.Errorf("error, total_vms not defined!")
+		}
+	}
 
 	if name, ok := d.GetOk("name"); ok {
 		domainDef.Name = name.(string)
+		udpateTableContent("name", domainDef.Name, &domainDef, vmidNumber)
 	}
 
-	if osvariant, ok := d.GetOk("metadata"); ok {
-		if osvariant == "windows" {
+	if osvariant, ok := d.GetOk("osvariant"); ok {
+		if osvariant.(string) == "windows" {
 			sstring := `<libosinfo:libosinfo xmlns:libosinfo="http://libosinfo.org/xmlns/libvirt/domain/1.0"><libosinfo:os id="http://microsoft.com/win/10"/></libosinfo:libosinfo>`
 			domainDef.Metadata = &libvirtxml.DomainMetadata{XML: sstring}
 		}
+		udpateTableContent("osvariant", osvariant.(string), &domainDef, vmidNumber)
 	}
 
 	if cpuMode, ok := d.GetOk("cpu.0.mode"); ok {
@@ -582,16 +663,20 @@ func resourceLibvirtDomainCreate(ctx context.Context, d *schema.ResourceData, me
 		Value: uint(d.Get("memory").(int)),
 		Unit:  "MiB",
 	}
+	udpateTableContent("memory", strconv.Itoa((int)(domainDef.Memory.Value)), &domainDef, vmidNumber)
 	domainDef.VCPU = &libvirtxml.DomainVCPU{
 		Value: uint(d.Get("vcpu").(int)),
 	}
+	udpateTableContent("vcpu", strconv.Itoa((int)(domainDef.VCPU.Value)), &domainDef, vmidNumber)
 	domainDef.Description = d.Get("description").(string)
 
 	domainDef.OS.Kernel = d.Get("kernel").(string)
 	domainDef.OS.Initrd = d.Get("initrd").(string)
 	domainDef.OS.Type.Arch = d.Get("arch").(string)
+	udpateTableContent("arch", domainDef.OS.Type.Arch, &domainDef, vmidNumber)
 
 	domainDef.OS.Type.Machine = d.Get("machine").(string)
+	udpateTableContent("machine", domainDef.OS.Type.Machine, &domainDef, vmidNumber)
 	domainDef.Devices.Emulator = d.Get("emulator").(string)
 
 	arch, err := getHostArchitecture(virConn)
@@ -603,7 +688,6 @@ func resourceLibvirtDomainCreate(ctx context.Context, d *schema.ResourceData, me
 		return diag.FromErr(err)
 	}
 
-	setVideo(d, &domainDef)
 	setConsoles(d, &domainDef)
 	setCmdlineArgs(d, &domainDef)
 	setFirmware(d, &domainDef)
@@ -664,6 +748,25 @@ func resourceLibvirtDomainCreate(ctx context.Context, d *schema.ResourceData, me
 	}
 
 	fmt.Print("wrote %d byte\n", n)
+	log.Printf("[DEBUG] domaincount to check ")
+	if last_instance, ok := d.GetOk("last_instance"); ok {
+		if last_instance.(bool) {
+			log.Printf("[DEBUG] last_instance found, generate table")
+			book, tbl := getMarkdownTbl()
+			exportMarkdown(book, tbl, "configuration.md")
+		}
+	}
+
+	if tpl_gen, ok := d.GetOk("tpl_gen"); ok {
+		if tpl_gen.(bool) {
+			if vmidNumber == 1 {
+				d.SetId("b2bf1520-df92-459c-ae5b-675037619395")
+			} else {
+				d.SetId("b2bf1520-df92-459c-ae5b-675037619396")
+			}
+			return nil
+		}
+	}
 
 	domain, err := virConn.DomainDefineXML(data)
 	if err != nil {
