@@ -2,9 +2,10 @@ package main
 
 import (
 	"math/rand"
+	"terraform-provider-kvm/kvm"
 	"time"
 
-	"github.com/dmacvicar/terraform-provider-libvirt/libvirt"
+	//"github.com/dmacvicar/terraform-provider-libvirt/libvirt"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/plugin"
 )
 
@@ -13,9 +14,9 @@ func init() {
 }
 
 func main() {
-	defer libvirt.CleanupLibvirtConnections()
+	defer kvm.CleanupLibvirtConnections()
 
 	plugin.Serve(&plugin.ServeOpts{
-		ProviderFunc: libvirt.Provider,
+		ProviderFunc: kvm.Provider,
 	})
 }

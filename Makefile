@@ -1,52 +1,30 @@
-LDFLAGS += -X version.ProviderVersion=$$(git describe --always --abbrev=40 --dirty)
+HOSTNAME=local.com
+NAMESPACE=nex
+NAME=kvm
+BINARY=terraform-provider-${NAME}
+VERSION=1.0
+OS_ARCH=linux_amd64
 
-# default  args for tests
-TEST_ARGS_DEF := -covermode=count -coverprofile=profile.cov
+default: install
 
-default: build
+build:
+	go build -o ${BINARY}
 
-terraform-provider-libvirt:
-	go build -ldflags "${LDFLAGS}"
+release:
+	GOOS=darwin GOARCH=amd64 go build -o ./bin/${BINARY}_${VERSION}_darwin_amd64
+	GOOS=freebsd GOARCH=386 go build -o ./bin/${BINARY}_${VERSION}_freebsd_386
+	GOOS=freebsd GOARCH=amd64 go build -o ./bin/${BINARY}_${VERSION}_freebsd_amd64
+	GOOS=freebsd GOARCH=arm go build -o ./bin/${BINARY}_${VERSION}_freebsd_arm
+	GOOS=linux GOARCH=386 go build -o ./bin/${BINARY}_${VERSION}_linux_386
+	GOOS=linux GOARCH=amd64 go build -o ./bin/${BINARY}_${VERSION}_linux_amd64
+	GOOS=linux GOARCH=arm go build -o ./bin/${BINARY}_${VERSION}_linux_arm
+	GOOS=openbsd GOARCH=386 go build -o ./bin/${BINARY}_${VERSION}_openbsd_386
+	GOOS=openbsd GOARCH=amd64 go build -o ./bin/${BINARY}_${VERSION}_openbsd_amd64
+	GOOS=solaris GOARCH=amd64 go build -o ./bin/${BINARY}_${VERSION}_solaris_amd64
+	GOOS=windows GOARCH=386 go build -o ./bin/${BINARY}_${VERSION}_windows_386
+	GOOS=windows GOARCH=amd64 go build -o ./bin/${BINARY}_${VERSION}_windows_amd64
 
-build: terraform-provider-libvirt
-
-install:
-	go install -ldflags "${LDFLAGS}"
-
-# unit tests
-# usage:
-# - run all the unit tests: make test
-# - run some particular test: make test TEST_ARGS="-run TestAccLibvirtDomain_Cpu"
-test:
-	go test -v $(TEST_ARGS_DEF) $(TEST_ARGS) ./libvirt
-
-# acceptance tests
-# usage:
-#
-# - run all the acceptance tests:
-#   make testacc
-#
-# - run some particular test:
-#   make testacc TEST_ARGS="-run TestAccLibvirtDomain_Cpu"
-#
-# - run all the network test with a verbose loglevel:
-#   TF_LOG=DEBUG make testacc TEST_ARGS="-run TestAccLibvirtNet*"
-#
-testacc:
-	./travis/run-tests-acceptance $(TEST_ARGS)
-
-golangcilint:
-	golangci-lint run
-
-tflint:
-	terraform fmt -write=false -check=true -diff=true examples/
-
-lint: golangcilint tflint
-
-clean:
-	rm -f terraform-provider-libvirt
-
-cleanup:
-	./travis/cleanup.sh
-
-.PHONY: build install test testacc tflint golangcilint lint terraform-provider-libvirt
+install: build
+	mkdir -p ~/.terraform.d/plugins/${HOSTNAME}/${NAMESPACE}/${NAME}/${VERSION}/${OS_ARCH}
+	cp ${BINARY} ~/.terraform.d/plugins/${HOSTNAME}/${NAMESPACE}/${NAME}/${VERSION}/${OS_ARCH}
+	mv ${BINARY} /home/user/go/bin/
