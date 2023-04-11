@@ -13,6 +13,7 @@ provider "kvm" {
 
 locals {
   vms = ["ubuntu", "windows"]
+  #vms = ["ubuntu"]
 }
 
 resource "kvm_domain" "vms" {
@@ -55,6 +56,19 @@ resource "kvm_domain" "vms" {
     type = var.vmconfig[each.value].graphics.type
     listen_address = var.vmconfig[each.value].graphics.listen_address
     listen_type = var.vmconfig[each.value].graphics.listen_type
+  }
+
+  dynamic "hostdev" {
+    for_each = var.vmconfig[each.value].hostdev_list
+    content {
+       name = hostdev.value.name
+       domain = hostdev.value.domain
+       driver = hostdev.value.driver
+       type = hostdev.value.type
+       slot = hostdev.value.slot
+       bus = hostdev.value.bus
+       function = hostdev.value.function
+    }
   }
 
 }

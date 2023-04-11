@@ -10,11 +10,15 @@ variable "vmconfig" {
         listen_type = string,
         listen_address = string,
        })
+       hostdev = list(string)
+       hostdev_list = list(object({
+            type = string,
+            name = string,
+            domain = number,
+            driver = string,
+            slot = number,
+            function = number,
+            bus = number,
+       }))
     }))
 }
-
-variable "hostdev" {
-    type = list(string)
-    default = ["ubuntu", "windows"]
-}
-

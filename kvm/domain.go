@@ -331,14 +331,14 @@ func setVideo(d *schema.ResourceData, domainDef *libvirtxml.Domain) {
 
 func setHostDev(d *schema.ResourceData, domainDef *libvirtxml.Domain) {
 	var pcistring string
-	var vmidNumber int
+	//var vmidNumber int
 
-	if vmid, ok := d.GetOk("vmid"); ok {
-		vmidNumber = vmid.(int)
-	} else {
-		fmt.Errorf("missing vmid")
-		return
-	}
+	//if vmid, ok := d.GetOk("vmid"); ok {
+	//	vmidNumber = vmid.(int)
+	//} else {
+	//	fmt.Errorf("missing vmid")
+	//	return
+	//}
 
 	for i := 0; i < d.Get("hostdev.#").(int); i++ {
 		hostdev := libvirtxml.DomainHostdev{}
@@ -352,11 +352,11 @@ func setHostDev(d *schema.ResourceData, domainDef *libvirtxml.Domain) {
 
 		switch hostdevType {
 		case "pci":
-			hostdevenabled, ok := d.GetOk(prefix + ".enabled")
-			if !ok || hostdevenabled.(int) != 1 {
-				udpateTableContent("VGA", "NA", domainDef, vmidNumber)
-				return
-			}
+			//hostdevenabled, ok := d.GetOk(prefix + ".enabled")
+			//if !ok || hostdevenabled.(int) != 1 {
+			//	//udpateTableContent("VGA", "NA", domainDef, vmidNumber)
+			//	return
+			//}
 			hostdev.SubsysPCI = &libvirtxml.DomainHostdevSubsysPCI{}
 			hostdev.SubsysPCI.Source = &libvirtxml.DomainHostdevSubsysPCISource{}
 			hostdev.SubsysPCI.Source.Address = &libvirtxml.DomainAddressPCI{}
@@ -405,25 +405,25 @@ func setHostDev(d *schema.ResourceData, domainDef *libvirtxml.Domain) {
 				pcistring += "0"
 			}
 			domainDef.Devices.Hostdevs = append(domainDef.Devices.Hostdevs, hostdev)
-			udpateTableContent("VGA", pcistring, domainDef, vmidNumber)
+			//udpateTableContent("VGA", pcistring, domainDef, vmidNumber)
 		case "usb":
 			hostdev.SubsysUSB = &libvirtxml.DomainHostdevSubsysUSB{}
 			hostdev.SubsysUSB.Source = &libvirtxml.DomainHostdevSubsysUSBSource{}
 			hostdev.SubsysUSB.Source.Address = &libvirtxml.DomainAddressUSB{}
 			if deviceName, ok := d.GetOk(prefix + ".name"); ok {
-				hostdevenabled, ok := d.GetOk(prefix + ".enabled")
-				if !ok || hostdevenabled.(int) != 1 {
-					udpateTableContent(deviceName.(string), "NA", domainDef, vmidNumber)
-					return
-				} else {
-					udpateTableContent(deviceName.(string), "passthrough", domainDef, vmidNumber)
-				}
+				//hostdevenabled, ok := d.GetOk(prefix + ".enabled")
+				//if !ok || hostdevenabled.(int) != 1 {
+				//	//udpateTableContent(deviceName.(string), "NA", domainDef, vmidNumber)
+				//	return
+				//} else {
+				//	//udpateTableContent(deviceName.(string), "passthrough", domainDef, vmidNumber)
+				//}
 
 				if usbBus, ok := d.GetOk(prefix + ".bus"); ok {
 					var aBus uint = (uint)(usbBus.(int))
 					hostdev.SubsysUSB.Source.Address.Bus = &aBus
 				} else {
-					fmt.Errorf("Bus for hostdev USB missing")
+					fmt.Errorf("Bus for hostdev USB missing '%s'", deviceName)
 				}
 				if usbDevice, ok := d.GetOk(prefix + ".device"); ok {
 					var aDevice uint = (uint)(usbDevice.(int))
